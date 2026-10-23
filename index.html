@@ -1,0 +1,1459 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#f5f6f8">
+<title>二维码识别器</title>
+
+<style>
+  /* ==========================================================================
+     视觉规范（固定浅色，不跟随系统深色；与 index.html / qr-tool.html 保持一致）
+     - 背景 #f5f6f8  卡片 #ffffff  主文字 #1a1a1a  次文字 #8a8f99  分割线 #eceef2
+     - 主色 #1677ff  描边按钮白底 + #dcdfe6 边框
+     - 圆角：卡片 18px / 按钮 14px；按钮最小高度 50px，字号 15~16px
+     ========================================================================== */
+  :root {
+    --bg:        #f5f6f8;
+    --card:      #ffffff;
+    --text:      #1a1a1a;
+    --text-sub:  #8a8f99;
+    --line:      #eceef2;
+    --primary:   #1677ff;
+    --border:    #dcdfe6;
+    --danger:    #e5484d;
+    --r-card:    18px;
+    --r-btn:     14px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  /* hidden 属性在设置了 display 的元素上会失效，这里强制兜底 */
+  [hidden] { display: none !important; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* 移动端优先 */
+  .screen-wrap {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 16px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* ---------- 头部卡片 ---------- */
+  .card {
+    background: var(--card);
+    border-radius: var(--r-card);
+    padding: 20px 18px;
+    text-align: center;
+    box-shadow: 0 2px 10px rgba(17, 24, 39, 0.04);
+    margin-bottom: 12px;
+  }
+  .avatar { font-size: 44px; line-height: 1; margin-bottom: 8px; }
+  .title { font-size: 20px; font-weight: 700; margin: 0 0 6px; }
+  .sub { font-size: 13px; color: var(--text-sub); margin: 0; }
+
+  /* ---------- 模式切换（分段控件） ---------- */
+  .mode-switch {
+    display: flex;
+    gap: 6px;
+    background: #f1f3f6;
+    padding: 5px;
+    border-radius: var(--r-btn);
+  }
+  .mode-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 44px;
+    border: none;
+    border-radius: 11px;
+    background: transparent;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-sub);
+    cursor: pointer;
+    transition: transform 0.12s ease, background 0.15s ease, color 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mode-btn:active { transform: scale(0.97); }
+  .mode-btn.active {
+    background: #fff;
+    color: var(--primary);
+    box-shadow: 0 2px 6px rgba(17, 24, 39, 0.08);
+  }
+
+  /* ---------- 面板 ---------- */
+  .panel-card { text-align: left; }
+  .sec-title { font-size: 16px; font-weight: 700; margin: 0 0 10px; }
+
+  /* ---------- 拖拽区 ---------- */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--r-card);
+    padding: 26px 16px;
+    text-align: center;
+    background: #fafbfc;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .drop-zone.dragover {
+    border-color: var(--primary);
+    background: #f0f7ff;
+  }
+  .drop-icon { font-size: 40px; line-height: 1; margin-bottom: 10px; }
+  .drop-tip { font-size: 12px; color: var(--text-sub); margin: 12px 0 0; line-height: 1.7; }
+
+  /* ---------- 图片预览 ---------- */
+  .preview-wrap { margin-top: 12px; }
+  .preview-img {
+    display: block;
+    width: 100%;
+    max-height: 240px;
+    object-fit: contain;
+    background: #f1f3f6;
+    border-radius: var(--r-btn);
+    border: 1px solid var(--line);
+  }
+
+  /* ---------- 按钮 ---------- */
+  .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 50px;
+    padding: 0 16px;
+    border: none;
+    border-radius: var(--r-btn);
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    background: #fff;
+    cursor: pointer;
+    transition: transform 0.12s ease, opacity 0.12s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* 点击缩放反馈 */
+  .btn:active { transform: scale(0.97); }
+  .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary {
+    background: var(--primary);
+    color: #fff;
+    box-shadow: 0 6px 16px rgba(22, 119, 255, 0.24);
+  }
+  .btn-outline { background: #fff; border: 1px solid var(--border); }
+  .btn-sm {
+    min-height: 44px;
+    font-size: 15px;
+    border-radius: 11px;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    cursor: pointer;
+    transition: transform 0.12s ease;
+  }
+  .btn-sm:active { transform: scale(0.97); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+
+  /* ---------- 摄像头预览 ---------- */
+  .video-wrap {
+    position: relative;
+    width: 100%;
+    height: 320px;
+    background: #14161a;
+    border-radius: var(--r-card);
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .video-wrap video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  /* 扫描框装饰：四边留暗，中间是取景区 */
+  .scan-frame {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 62%;
+    height: 62%;
+    transform: translate(-50%, -50%);
+    border-radius: 12px;
+    box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.32);
+    pointer-events: none;
+  }
+  .video-placeholder {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0 24px;
+    font-size: 13px;
+    color: #c9ced8;
+    background: #14161a;
+  }
+
+  /* ---------- 状态提示（温和提示，不打扰） ---------- */
+  .status {
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text-sub);
+    margin: 12px 0 0;
+    min-height: 20px;
+    word-break: break-word;
+  }
+  .status.warn { color: var(--danger); }
+
+  /* 引擎加载失败的兜底盒子 */
+  .engine-box {
+    margin-top: 12px;
+    border: 1px solid #f3d1d3;
+    background: #fff5f5;
+    border-radius: var(--r-btn);
+    padding: 12px;
+  }
+  .engine-msg { font-size: 13px; color: #a12a2f; line-height: 1.7; margin: 0 0 10px; }
+
+  /* ---------- 结果区 ---------- */
+  .result-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .result-head .sec-title { margin: 0; }
+  .result-item {
+    border: 1px solid var(--line);
+    border-radius: var(--r-btn);
+    background: #fafbfc;
+    padding: 14px;
+    margin-bottom: 10px;
+    text-align: left;
+  }
+  .result-item:last-child { margin-bottom: 0; }
+  .type-tag {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 6px 10px;
+    border-radius: 999px;
+    margin-bottom: 10px;
+  }
+  .type-tag.tag-url  { background: #e6f0ff; color: #1677ff; }
+  .type-tag.tag-text { background: #eceef2; color: #5b6472; }
+  /* 大号字体显示内容；长文本换行 + 超长可滚动，不会溢出卡片 */
+  .result-text {
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1.5;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    max-height: 260px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    margin-bottom: 12px;
+  }
+  .result-empty { font-size: 13px; color: var(--text-sub); line-height: 1.7; }
+
+  /* ---------- 页脚 ---------- */
+  .footer {
+    margin-top: 22px;
+    text-align: center;
+    font-size: 11px;
+    color: #a8adb5;
+    line-height: 1.8;
+  }
+
+  /* ---------- Toast ---------- */
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+    transform: translate(-50%, 8px);
+    max-width: 80%;
+    padding: 10px 16px;
+    background: rgba(26, 26, 26, 0.88);
+    color: #fff;
+    font-size: 14px;
+    border-radius: 12px;
+    text-align: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease, transform 0.22s ease;
+    z-index: 900;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+</style>
+</head>
+
+<body>
+
+<div class="screen-wrap" id="screenWrap">
+
+  <!-- ---------- 头部 ---------- -->
+  <section class="card">
+    <div class="avatar">🔍</div>
+    <h1 class="title">二维码识别器</h1>
+    <p class="sub">上传图片或用摄像头扫一下，只看内容不跳转</p>
+  </section>
+
+  <!-- ---------- 模式切换 ---------- -->
+  <section class="card">
+    <div class="mode-switch">
+      <button type="button" class="mode-btn active" id="modeUpload">📁 上传图片</button>
+      <button type="button" class="mode-btn" id="modeCamera">📷 摄像头扫描</button>
+    </div>
+  </section>
+
+  <!-- ---------- ① 上传图片 ---------- -->
+  <section class="card panel-card" id="panelUpload">
+    <div class="drop-zone" id="dropZone">
+      <div class="drop-icon">🖼️</div>
+      <button type="button" class="btn btn-primary" id="btnPick">📁 选择图片</button>
+      <input type="file" id="fileInput" accept="image/*" hidden>
+      <p class="drop-tip">
+        也可以把图片直接<b>拖到这里</b><br>
+        或者按 <b>Ctrl+V</b> 粘贴截图
+      </p>
+    </div>
+
+    <div class="preview-wrap" id="previewWrap" hidden>
+      <img id="previewImg" class="preview-img" alt="待识别的图片">
+      <div class="grid">
+        <button type="button" class="btn btn-sm" id="btnClearImage">🧹 清除图片</button>
+      </div>
+    </div>
+
+    <p class="status" id="uploadStatus"></p>
+
+    <div class="engine-box" id="engineBox" hidden>
+      <p class="engine-msg" id="engineMsg"></p>
+      <button type="button" class="btn btn-outline" id="btnRetryEngine">🔁 重试加载识别引擎</button>
+    </div>
+  </section>
+
+  <!-- ---------- ② 摄像头扫描 ---------- -->
+  <section class="card panel-card" id="panelCamera" hidden>
+    <div class="video-wrap">
+      <video id="video" playsinline muted autoplay></video>
+      <div class="scan-frame" id="scanFrame"></div>
+      <div class="video-placeholder" id="videoPlaceholder">📷 点下面的按钮打开摄像头</div>
+    </div>
+
+    <button type="button" class="btn btn-primary" id="btnCamera">📷 打开摄像头</button>
+    <div class="grid">
+      <button type="button" class="btn btn-outline" id="btnStop" hidden>⏹ 停止</button>
+      <button type="button" class="btn btn-outline" id="btnResume" hidden>🔄 继续扫描</button>
+    </div>
+
+    <p class="status" id="cameraStatus"></p>
+  </section>
+
+  <!-- ---------- ③ 识别结果 ---------- -->
+  <section class="card panel-card" id="resultCard" hidden>
+    <div class="result-head">
+      <h2 class="sec-title">识别结果</h2>
+      <button type="button" class="btn btn-sm" id="btnClearResults" style="width:auto;padding:0 12px;">🧹 清空</button>
+    </div>
+    <div id="resultList"></div>
+  </section>
+
+  <!-- ---------- 页脚 ---------- -->
+  <footer class="footer">
+    <div>本工具只读取并展示二维码内容，不会自动跳转、也不会打开任何网页</div>
+    <div>所有处理都在你自己的浏览器里完成，不上传任何图片</div>
+    <div>Made with ❤️</div>
+  </footer>
+
+</div><!-- /#screenWrap -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ==========================================================================
+   二维码识别器（自包含单文件，无构建、无框架）
+   --------------------------------------------------------------------------
+   - 识别引擎双保险：
+       ① 优先用浏览器原生 BarcodeDetector（Chrome / Edge / Android Chrome）
+       ② 原生不支持时才动态加载 jsQR（8 秒超时 + done 单次闸门 + 失败可重试）
+   - 四种输入：选择文件 / 拖拽 / Ctrl+V 粘贴 / 摄像头扫描
+   - 结果只做「纯文本展示 + 一键复制」，绝不跳转到任何网址
+   - 风格：ES5（var + function），与 index.html / qr-tool.html 保持一致
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  /** jsQR 的 CDN 地址：仅在浏览器不支持原生 BarcodeDetector 时才动态加载 */
+  var JSQLR_URL = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+  /** CDN 加载超时（毫秒）：jsdelivr 在国内可能请求挂起，超时后走降级 */
+  var CDN_TIMEOUT = 8000;
+  /** 图片识别时的最长边（像素）：超过就等比缩放，识别更快也更稳 */
+  var MAX_SIDE = 1200;
+  /** 缩放图没认出时，原图二次尝试的上限（像素），避免超大图卡住 */
+  var MAX_SIDE_FULL = 2400;
+  /** 摄像头单帧的最长边（像素） */
+  var CAM_MAX_SIDE = 800;
+
+  /** 识别引擎彻底不可用时的提示 */
+  var ENGINE_FAIL_MSG = '识别引擎没加载成功，请联网后重试，或换用 Chrome / Edge 浏览器';
+  /** 画面里没有码时的温和提示 */
+  var NOT_FOUND_MSG = '没识别到二维码，换个角度或裁剪一下图片试试';
+
+  /* ---------------------------------------------------------------------
+     DOM 引用
+     --------------------------------------------------------------------- */
+  var elModeUpload, elModeCamera, elPanelUpload, elPanelCamera;
+  var elDropZone, elFileInput, elBtnPick, elPreviewWrap, elPreviewImg, elBtnClearImage;
+  var elUploadStatus, elEngineBox, elEngineMsg, elBtnRetryEngine;
+  var elVideo, elVideoPlaceholder, elBtnCamera, elBtnStop, elBtnResume, elCameraStatus;
+  var elResultCard, elResultList, elBtnClearResults, elToast;
+
+  /* ---------------------------------------------------------------------
+     运行时状态
+     --------------------------------------------------------------------- */
+  var toastTimer = null;
+  /** 识别到的内容：[{text: '...', type: 'url'|'text'}]，数组头部是最新的 */
+  var results = [];
+  /** 当前模式：'upload' | 'camera' */
+  var mode = 'upload';
+  /** 摄像头相关 */
+  var camStream = null;   /* MediaStream */
+  var camRaf = null;      /* 逐帧扫描的句柄 */
+  var camPaused = false;  /* 识别到内容后暂停扫描 */
+  var camBusy = false;    /* 识别进行中标记，防止并发 */
+
+  /**
+   * 识别引擎状态。
+   * - mode: 'none'（不可用）| 'native'（原生）| 'jsqr'（降级）
+   * - loading: jsQR 是否正在加载
+   * - nativeBroken: 原生引擎出错后置位，之后不再走原生
+   * - waiters: 等待引擎就绪的回调队列
+   */
+  var engine = {
+    mode: 'none',
+    loading: false,
+    nativeBroken: false,
+    waiters: [],
+    scriptEl: null
+  };
+
+  /* requestAnimationFrame 的兜底（老浏览器 / 无动画环境用 setTimeout） */
+  var raf = window.requestAnimationFrame
+    ? function (fn) { return window.requestAnimationFrame(fn); }
+    : function (fn) { return window.setTimeout(fn, 66); };
+  var cancelRaf = window.cancelAnimationFrame
+    ? function (id) { window.cancelAnimationFrame(id); }
+    : function (id) { window.clearTimeout(id); };
+
+  /* ---------------------------------------------------------------------
+     小工具
+     --------------------------------------------------------------------- */
+
+  /**
+   * 按 id 取元素。
+   * @param {string} id 元素 id
+   * @return {HTMLElement|null}
+   */
+  function $(id) {
+    return document.getElementById(id);
+  }
+
+  /**
+   * 底部浮层提示。
+   * @param {string} msg 提示文案
+   */
+  function toast(msg) {
+    if (!elToast) return;
+    elToast.textContent = msg;
+    elToast.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      elToast.classList.remove('show');
+    }, 2600);
+  }
+
+  /**
+   * 去掉首尾空格；null / undefined 一律当空串。
+   * @param {*} v 原始值
+   * @return {string}
+   */
+  function trim(v) {
+    return String(v === null || v === undefined ? '' : v).trim();
+  }
+
+  /**
+   * 判断内容是不是网址（只用于打标签，绝不会据此跳转）。
+   * @param {string} text 内容
+   * @return {boolean}
+   */
+  function isUrlText(text) {
+    return /^https?:\/\//i.test(String(text || ''));
+  }
+
+  /**
+   * 设置上传区下方的状态文字。
+   * @param {string} msg 文案；空串表示清空
+   * @param {boolean} warn 是否用警示色
+   */
+  function setUploadStatus(msg, warn) {
+    if (!elUploadStatus) return;
+    elUploadStatus.textContent = msg || '';
+    if (warn) elUploadStatus.classList.add('warn');
+    else elUploadStatus.classList.remove('warn');
+  }
+
+  /**
+   * 设置摄像头下方的状态文字。
+   * @param {string} msg 文案；空串表示清空
+   * @param {boolean} warn 是否用警示色
+   */
+  function setCameraStatus(msg, warn) {
+    if (!elCameraStatus) return;
+    elCameraStatus.textContent = msg || '';
+    if (warn) elCameraStatus.classList.add('warn');
+    else elCameraStatus.classList.remove('warn');
+  }
+
+  /* ---------------------------------------------------------------------
+     识别引擎（原生优先，jsQR 降级）
+     --------------------------------------------------------------------- */
+
+  /**
+   * 动态加载 jsQR。
+   * - 全局对象已存在：直接成功；
+   * - 8 秒超时 / onerror：失败，并移除挂起的 <script>（重试不堆积僵尸节点）；
+   * - done 单次闸门：超时与 onerror 同时发生也只回调一次。
+   * @param {function(boolean)} cb true=加载成功
+   */
+  function loadJsQr(cb) {
+    if (window.jsQR) {
+      cb(true);
+      return;
+    }
+    var done = false;
+    var timer = null;
+    function finish(ok) {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      // 失败时移除挂起的 script 节点，避免多次重试后越积越多
+      if (!ok && engine.scriptEl && engine.scriptEl.parentNode) {
+        engine.scriptEl.parentNode.removeChild(engine.scriptEl);
+      }
+      if (!ok) engine.scriptEl = null;
+      cb(ok);
+    }
+    // jsdelivr 在国内可能请求挂起（既不 onload 也不 onerror），超时要主动降级
+    timer = setTimeout(function () {
+      finish(false);
+    }, CDN_TIMEOUT);
+
+    var s = document.createElement('script');
+    s.src = JSQLR_URL;
+    s.onload = function () {
+      finish(!!window.jsQR);
+    };
+    s.onerror = function () {
+      finish(false);
+    };
+    engine.scriptEl = s;
+    document.head.appendChild(s);
+  }
+
+  /**
+   * 确保有一个可用的识别引擎。
+   * @param {function(boolean)} cb true=引擎可用
+   */
+  function ensureEngine(cb) {
+    if (engine.mode === 'native' || engine.mode === 'jsqr') {
+      cb(true);
+      return;
+    }
+    if (engine.loading) {
+      engine.waiters.push(cb);
+      return;
+    }
+    engine.waiters.push(cb);
+    // 原生引擎优先：不需要联网，也更快
+    if (!engine.nativeBroken && window.BarcodeDetector) {
+      engine.mode = 'native';
+      flushWaiters(true);
+      return;
+    }
+    // 降级：动态加载 jsQR
+    engine.loading = true;
+    loadJsQr(function (ok) {
+      engine.loading = false;
+      engine.mode = ok ? 'jsqr' : 'none';
+      flushWaiters(ok);
+    });
+  }
+
+  /**
+   * 唤醒所有等待引擎的回调（只回调一次，避免重复排队）。
+   * @param {boolean} ok 引擎是否可用
+   */
+  function flushWaiters(ok) {
+    var list = engine.waiters.slice();
+    engine.waiters.length = 0;
+    for (var i = 0; i < list.length; i++) {
+      list[i](ok);
+    }
+  }
+
+  /**
+   * 用原生 BarcodeDetector 识别一次。
+   * @param {HTMLCanvasElement} canvas 待识别的画布
+   * @param {function(string, *)} cb 参数为（内容, 错误）；错误非空表示这次识别失败
+   */
+  function nativeDetect(canvas, cb) {
+    var Detector = window.BarcodeDetector;
+    if (!Detector) {
+      cb('', new Error('no-native-detector'));
+      return;
+    }
+    var detector = null;
+    try {
+      detector = new Detector({ formats: ['qr_code'] });
+    } catch (e) {
+      cb('', e);
+      return;
+    }
+    if (!detector || typeof detector.detect !== 'function') {
+      cb('', new Error('bad-detector'));
+      return;
+    }
+    var promise = null;
+    try {
+      promise = detector.detect(canvas);
+    } catch (e2) {
+      cb('', e2);
+      return;
+    }
+    if (!promise || typeof promise.then !== 'function') {
+      cb('', new Error('bad-detect-promise'));
+      return;
+    }
+    promise.then(function (codes) {
+      var text = '';
+      if (codes && codes.length && codes[0] && codes[0].rawValue) {
+        text = String(codes[0].rawValue);
+      }
+      cb(text, '');
+    }, function (err) {
+      cb('', err);
+    });
+  }
+
+  /**
+   * 用 jsQR 识别一次。
+   * @param {HTMLCanvasElement} canvas 待识别的画布
+   * @param {function(string, *)} cb 参数为（内容, 错误）
+   */
+  function jsQrDetect(canvas, cb) {
+    var ctx = null;
+    try {
+      ctx = canvas.getContext('2d');
+    } catch (e) {
+      ctx = null;
+    }
+    if (!ctx) {
+      cb('', new Error('no-canvas-context'));
+      return;
+    }
+    var imgData = null;
+    try {
+      imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    } catch (e2) {
+      imgData = null;
+    }
+    if (!imgData) {
+      cb('', new Error('no-image-data'));
+      return;
+    }
+    var out = null;
+    try {
+      out = window.jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: 'attemptBoth' });
+    } catch (e3) {
+      out = null;
+    }
+    if (out && out.data) {
+      cb(String(out.data), '');
+    } else {
+      cb('', '');
+    }
+  }
+
+  /**
+   * 识别一张画布里的二维码。
+   * - 原生引擎「没识别到」是正常情况（画面里暂时没有码），安静返回空串；
+   * - 原生引擎报错时自动降级到 jsQR；
+   * - 两个引擎都彻底不可用时返回 err = 'engine'。
+   * @param {HTMLCanvasElement} canvas 待识别的画布
+   * @param {function(string, string)} cb 参数为（内容, 错误标记）
+   */
+  function detect(canvas, cb) {
+    ensureEngine(function (ok) {
+      if (!ok) {
+        cb('', 'engine');
+        return;
+      }
+      if (engine.mode === 'native') {
+        nativeDetect(canvas, function (text, err) {
+          if (!err) {
+            cb(text, '');
+            return;
+          }
+          // 原生引擎出错（例如实现了接口但不支持 qr_code 格式）→ 降级
+          engine.nativeBroken = true;
+          engine.mode = 'none';
+          ensureEngine(function (ok2) {
+            if (!ok2) {
+              cb('', 'engine');
+              return;
+            }
+            jsQrDetect(canvas, cb);
+          });
+        });
+        return;
+      }
+      jsQrDetect(canvas, cb);
+    });
+  }
+
+  /**
+   * 显示「识别引擎不可用」的兜底提示。
+   */
+  function showEngineFail() {
+    if (elEngineMsg) elEngineMsg.textContent = ENGINE_FAIL_MSG;
+    if (elEngineBox) elEngineBox.hidden = false;
+    toast(ENGINE_FAIL_MSG);
+  }
+
+  /* ---------------------------------------------------------------------
+     图片处理（选择 / 拖拽 / 粘贴共用）
+     --------------------------------------------------------------------- */
+
+  /**
+   * 把一张图片画到 canvas 上；maxSide > 0 时按最长边等比缩放。
+   * @param {HTMLImageElement} img 原图
+   * @param {number} maxSide 最长边上限（像素）；0 表示不缩放
+   * @return {HTMLCanvasElement}
+   */
+  function buildCanvas(img, maxSide) {
+    var w = img.naturalWidth || img.width || 0;
+    var h = img.naturalHeight || img.height || 0;
+    var cw = w;
+    var ch = h;
+    if (maxSide > 0 && (w > maxSide || h > maxSide)) {
+      var scale = maxSide / Math.max(w, h);
+      cw = Math.max(1, Math.round(w * scale));
+      ch = Math.max(1, Math.round(h * scale));
+    }
+    var canvas = document.createElement('canvas');
+    canvas.width = cw;
+    canvas.height = ch;
+    var ctx = null;
+    try {
+      ctx = canvas.getContext('2d');
+    } catch (e) {
+      ctx = null;
+    }
+    if (ctx) {
+      try {
+        ctx.drawImage(img, 0, 0, cw, ch);
+      } catch (e2) {
+        // 画不上就按原尺寸继续，后面识别会失败，不影响页面
+      }
+    }
+    return canvas;
+  }
+
+  /**
+   * 载入一张图片（dataURL）并识别。
+   * @param {string} src 图片地址（dataURL / blobURL）
+   */
+  function loadImage(src) {
+    var img = new Image();
+    img.onload = function () {
+      var w = img.naturalWidth || img.width || 0;
+      var h = img.naturalHeight || img.height || 0;
+      if (!w || !h) {
+        setUploadStatus('这张图片读不出尺寸，换一张试试', true);
+        return;
+      }
+      if (elPreviewImg) elPreviewImg.src = src;
+      if (elPreviewWrap) elPreviewWrap.hidden = false;
+
+      var scaled = buildCanvas(img, MAX_SIDE);
+      setUploadStatus('正在识别…');
+      detect(scaled, function (text, err) {
+        if (text) {
+          addResult(text);
+          setUploadStatus('识别完成 ✅');
+          return;
+        }
+        if (err === 'engine') {
+          showEngineFail();
+          setUploadStatus('');
+          return;
+        }
+        // 缩放图没认出 → 用接近原图的尺寸再试一次（贴纸里码很小时有用）
+        var big = buildCanvas(img, MAX_SIDE_FULL);
+        detect(big, function (text2, err2) {
+          if (text2) {
+            addResult(text2);
+            setUploadStatus('识别完成 ✅');
+            return;
+          }
+          if (err2 === 'engine') {
+            showEngineFail();
+            setUploadStatus('');
+            return;
+          }
+          setUploadStatus(NOT_FOUND_MSG);
+          toast(NOT_FOUND_MSG);
+        });
+      });
+    };
+    img.onerror = function () {
+      setUploadStatus('图片打不开，可能不是有效的图片文件', true);
+    };
+    img.src = src;
+  }
+
+  /**
+   * 处理一个选中的图片文件。
+   * @param {File} file 图片文件
+   */
+  function handleFile(file) {
+    if (!file) return;
+    var type = file.type || '';
+    if (type && type.indexOf('image/') !== 0) {
+      toast('这不像是一张图片，换一张试试');
+      setUploadStatus('这不像是一张图片，换一张试试', true);
+      return;
+    }
+    setUploadStatus('正在读取图片…');
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var src = e && e.target ? e.target.result : '';
+      if (!src) {
+        setUploadStatus('图片读取失败，换一张试试', true);
+        return;
+      }
+      loadImage(src);
+    };
+    reader.onerror = function () {
+      setUploadStatus('图片读取失败，换一张试试', true);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  /* ---------------------------------------------------------------------
+     结果区
+     --------------------------------------------------------------------- */
+
+  /**
+   * 记入一条识别结果（去重，新的排在最前面）。
+   * @param {string} text 识别到的内容
+   * @return {boolean} 是否记入成功
+   */
+  function addResult(text) {
+    var t = trim(text);
+    if (!t) return false;
+    var i;
+    for (i = 0; i < results.length; i++) {
+      if (results[i].text === t) {
+        results.splice(i, 1);
+        break;
+      }
+    }
+    results.unshift({ text: t, type: isUrlText(t) ? 'url' : 'text' });
+    renderResults();
+    return true;
+  }
+
+  /**
+   * 重建结果区（纯 DOM + textContent，内容永远不会被当成链接解析）。
+   */
+  function renderResults() {
+    if (!elResultList || !elResultCard) return;
+    while (elResultList.firstChild) {
+      elResultList.removeChild(elResultList.firstChild);
+    }
+    if (!results.length) {
+      elResultCard.hidden = true;
+      return;
+    }
+    elResultCard.hidden = false;
+    for (var i = 0; i < results.length; i++) {
+      elResultList.appendChild(buildResultItem(results[i]));
+    }
+  }
+
+  /**
+   * 生成单条结果节点。
+   * @param {Object} item {text, type}
+   * @return {HTMLElement}
+   */
+  function buildResultItem(item) {
+    var box = document.createElement('div');
+    box.className = 'result-item';
+
+    // 类型标签：网址 / 文本（只是标签，不提供任何打开链接的入口）
+    var tag = document.createElement('span');
+    tag.className = item.type === 'url' ? 'type-tag tag-url' : 'type-tag tag-text';
+    tag.textContent = item.type === 'url' ? '🌐 网址' : '📝 文本';
+    box.appendChild(tag);
+
+    // 大号字体显示内容，长文本自动换行 / 可滚动
+    var txt = document.createElement('div');
+    txt.className = 'result-text';
+    txt.textContent = item.text;
+    box.appendChild(txt);
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-outline';
+    btn.textContent = '📄 复制';
+    btn.addEventListener('click', function () {
+      copyText(item.text, btn);
+    });
+    box.appendChild(btn);
+
+    return box;
+  }
+
+  /* ---------------------------------------------------------------------
+     复制
+     --------------------------------------------------------------------- */
+
+  /**
+   * 兜底复制：临时 textarea + execCommand。
+   * textarea 必须真的插入文档流里才能被选中；用 fixed + 移出屏幕避免跳动。
+   * @param {string} text 待复制文本
+   * @return {boolean} 是否成功
+   */
+  function legacyCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', 'readonly');
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    if (ta.setSelectionRange) ta.setSelectionRange(0, ta.value.length);
+    var ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch (e) {
+      ok = false;
+    }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  /**
+   * 复制文本到剪贴板：优先 navigator.clipboard，失败降级 execCommand。
+   * @param {string} text 待复制文本
+   * @param {function(boolean)} cb true=复制成功
+   */
+  function doCopy(text, cb) {
+    if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+      var promise = null;
+      try {
+        promise = navigator.clipboard.writeText(text);
+      } catch (e) {
+        cb(legacyCopy(text));
+        return;
+      }
+      if (promise && typeof promise.then === 'function') {
+        promise.then(function () {
+          cb(true);
+        }, function () {
+          cb(legacyCopy(text));
+        });
+        return;
+      }
+      cb(true);
+      return;
+    }
+    cb(legacyCopy(text));
+  }
+
+  /**
+   * 复制按钮的点击处理。
+   * @param {string} text 待复制文本
+   * @param {HTMLElement} btn 按钮本身（用于改文案反馈）
+   */
+  function copyText(text, btn) {
+    doCopy(text, function (ok) {
+      if (!ok) {
+        toast('复制失败，请长按手动复制');
+        return;
+      }
+      toast('已复制到剪贴板 ✅');
+      if (btn) {
+        var old = btn.textContent;
+        btn.textContent = '✅ 已复制';
+        setTimeout(function () {
+          btn.textContent = old;
+        }, 1500);
+      }
+    });
+  }
+
+  /* ---------------------------------------------------------------------
+     摄像头
+     --------------------------------------------------------------------- */
+
+  /**
+   * 打开摄像头并开始逐帧扫描。
+   */
+  function startCamera() {
+    // ① 不在安全上下文：浏览器根本不会给摄像头权限
+    if (!window.isSecureContext) {
+      setCameraStatus('摄像头需要 https 或 localhost 环境，当前打不开；可以直接用「上传图片」的方式识别', true);
+      toast('摄像头需要 https 或 localhost 环境');
+      return;
+    }
+    // ② 浏览器根本没有这个接口
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      setCameraStatus('没找到可用摄像头，或当前浏览器不支持；请改用「上传图片」的方式', true);
+      toast('没找到可用摄像头，或当前浏览器不支持');
+      return;
+    }
+    setCameraStatus('正在打开摄像头…');
+    var promise = null;
+    try {
+      promise = navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    } catch (e) {
+      handleCameraError(e);
+      return;
+    }
+    if (!promise || typeof promise.then !== 'function') {
+      handleCameraError(new Error('no-promise'));
+      return;
+    }
+    promise.then(function (stream) {
+      camStream = stream;
+      if (elVideo) {
+        elVideo.srcObject = stream;
+        try {
+          var p = elVideo.play();
+          if (p && typeof p.catch === 'function') p.catch(function () {});
+        } catch (e2) {
+          // 某些浏览器需要用户手势才能播放，忽略即可
+        }
+      }
+      if (elVideoPlaceholder) elVideoPlaceholder.hidden = true;
+      if (elBtnCamera) elBtnCamera.hidden = true;
+      if (elBtnStop) elBtnStop.hidden = false;
+      if (elBtnResume) elBtnResume.hidden = true;
+      camPaused = false;
+      setCameraStatus('对着二维码扫一下，识别到就会自动停下来');
+      startScanLoop();
+    }, function (err) {
+      handleCameraError(err);
+    });
+  }
+
+  /**
+   * 摄像头开启失败时给出对应的中文提示（三种失败分开说）。
+   * @param {*} err 错误对象
+   */
+  function handleCameraError(err) {
+    var name = '';
+    if (err && err.name) name = err.name;
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
+      setCameraStatus('没拿到摄像头权限，请在浏览器地址栏允许摄像头后重试', true);
+      toast('没拿到摄像头权限，请在浏览器地址栏允许摄像头后重试');
+    } else {
+      setCameraStatus('没找到可用摄像头，或当前浏览器不支持；请改用「上传图片」的方式', true);
+      toast('没找到可用摄像头，或当前浏览器不支持');
+    }
+    if (elBtnCamera) elBtnCamera.hidden = false;
+    if (elBtnStop) elBtnStop.hidden = true;
+    if (elBtnResume) elBtnResume.hidden = true;
+  }
+
+  /**
+   * 停止扫描并释放摄像头（停掉所有轨道，指示灯熄灭）。
+   */
+  function stopCamera() {
+    if (camRaf) {
+      cancelRaf(camRaf);
+      camRaf = null;
+    }
+    if (camStream) {
+      var tracks = [];
+      if (typeof camStream.getTracks === 'function') {
+        tracks = camStream.getTracks() || [];
+      }
+      for (var i = 0; i < tracks.length; i++) {
+        try {
+          tracks[i].stop();
+        } catch (e) {
+          // 忽略单个轨道停止失败
+        }
+      }
+      camStream = null;
+    }
+    if (elVideo) {
+      try {
+        elVideo.srcObject = null;
+      } catch (e2) {
+        // 忽略
+      }
+    }
+    camPaused = false;
+    camBusy = false;
+    if (elVideoPlaceholder) elVideoPlaceholder.hidden = false;
+    if (elBtnCamera) elBtnCamera.hidden = false;
+    if (elBtnStop) elBtnStop.hidden = true;
+    if (elBtnResume) elBtnResume.hidden = true;
+  }
+
+  /**
+   * 把摄像头当前这一帧画到 canvas 上。
+   * @return {HTMLCanvasElement|null} 取不到画面时返回 null
+   */
+  function grabFrame() {
+    if (!elVideo) return null;
+    var vw = elVideo.videoWidth || 0;
+    var vh = elVideo.videoHeight || 0;
+    if (!vw || !vh) return null;
+    var cw = vw;
+    var ch = vh;
+    if (vw > CAM_MAX_SIDE || vh > CAM_MAX_SIDE) {
+      var scale = CAM_MAX_SIDE / Math.max(vw, vh);
+      cw = Math.max(1, Math.round(vw * scale));
+      ch = Math.max(1, Math.round(vh * scale));
+    }
+    var canvas = document.createElement('canvas');
+    canvas.width = cw;
+    canvas.height = ch;
+    var ctx = null;
+    try {
+      ctx = canvas.getContext('2d');
+    } catch (e) {
+      ctx = null;
+    }
+    if (!ctx) return null;
+    try {
+      ctx.drawImage(elVideo, 0, 0, cw, ch);
+    } catch (e2) {
+      return null;
+    }
+    return canvas;
+  }
+
+  /**
+   * 扫描一帧。没识别到就安静继续，不弹提示。
+   */
+  function scanStep() {
+    if (!camStream || camPaused || camBusy) return;
+    var canvas = grabFrame();
+    if (!canvas) return;
+    camBusy = true;
+    detect(canvas, function (text, err) {
+      camBusy = false;
+      if (text) {
+        addResult(text);
+        camPaused = true;
+        if (elBtnResume) elBtnResume.hidden = false;
+        setCameraStatus('已识别到内容，点「🔄 继续扫描」可以继续扫下一个');
+        return;
+      }
+      if (err === 'engine') {
+        showEngineFail();
+        stopCamera();
+      }
+      // 画面里暂时没有码：什么都不说，继续扫
+    });
+  }
+
+  /**
+   * 启动逐帧扫描循环。
+   * 识别到内容后 camPaused 会置位，循环随即停下（不再空转耗电）；
+   * 点「🔄 继续扫描」会重新启动它。
+   */
+  function startScanLoop() {
+    if (camRaf) cancelRaf(camRaf);
+    camRaf = raf(function () {
+      camRaf = null;
+      scanStep();
+      if (camStream && !camPaused) startScanLoop();
+    });
+  }
+
+  /* ---------------------------------------------------------------------
+     模式切换
+     --------------------------------------------------------------------- */
+
+  /**
+   * 切换上传 / 摄像头模式。
+   * @param {string} m 'upload' | 'camera'
+   */
+  function setMode(m) {
+    mode = m;
+    var isCam = (m === 'camera');
+    if (elPanelUpload) elPanelUpload.hidden = isCam;
+    if (elPanelCamera) elPanelCamera.hidden = !isCam;
+    if (elModeUpload) elModeUpload.className = isCam ? 'mode-btn' : 'mode-btn active';
+    if (elModeCamera) elModeCamera.className = isCam ? 'mode-btn active' : 'mode-btn';
+    // 离开摄像头模式就释放摄像头，避免指示灯一直亮着
+    if (!isCam && camStream) {
+      stopCamera();
+      setCameraStatus('');
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+     初始化：把所有交互挂上
+     --------------------------------------------------------------------- */
+  function init() {
+    elModeUpload = $('modeUpload');
+    elModeCamera = $('modeCamera');
+    elPanelUpload = $('panelUpload');
+    elPanelCamera = $('panelCamera');
+    elDropZone = $('dropZone');
+    elFileInput = $('fileInput');
+    elBtnPick = $('btnPick');
+    elPreviewWrap = $('previewWrap');
+    elPreviewImg = $('previewImg');
+    elBtnClearImage = $('btnClearImage');
+    elUploadStatus = $('uploadStatus');
+    elEngineBox = $('engineBox');
+    elEngineMsg = $('engineMsg');
+    elBtnRetryEngine = $('btnRetryEngine');
+    elVideo = $('video');
+    elVideoPlaceholder = $('videoPlaceholder');
+    elBtnCamera = $('btnCamera');
+    elBtnStop = $('btnStop');
+    elBtnResume = $('btnResume');
+    elCameraStatus = $('cameraStatus');
+    elResultCard = $('resultCard');
+    elResultList = $('resultList');
+    elBtnClearResults = $('btnClearResults');
+    elToast = $('toast');
+
+    /* ---------- 模式切换 ---------- */
+    if (elModeUpload) {
+      elModeUpload.addEventListener('click', function () {
+        setMode('upload');
+      });
+    }
+    if (elModeCamera) {
+      elModeCamera.addEventListener('click', function () {
+        setMode('camera');
+      });
+    }
+
+    /* ---------- 选择图片 ---------- */
+    if (elBtnPick) {
+      elBtnPick.addEventListener('click', function () {
+        if (elFileInput) elFileInput.click();
+      });
+    }
+    if (elFileInput) {
+      elFileInput.addEventListener('change', function () {
+        var file = elFileInput.files && elFileInput.files.length ? elFileInput.files[0] : null;
+        if (file) handleFile(file);
+        // 允许连续选同一张图
+        try {
+          elFileInput.value = '';
+        } catch (e) {
+          // 忽略
+        }
+      });
+    }
+    if (elBtnClearImage) {
+      elBtnClearImage.addEventListener('click', function () {
+        if (elPreviewImg) elPreviewImg.src = '';
+        if (elPreviewWrap) elPreviewWrap.hidden = true;
+        setUploadStatus('');
+      });
+    }
+
+    /* ---------- 拖拽 ---------- */
+    if (elDropZone) {
+      elDropZone.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        elDropZone.classList.add('dragover');
+      });
+      elDropZone.addEventListener('dragenter', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        elDropZone.classList.add('dragover');
+      });
+      elDropZone.addEventListener('dragleave', function (e) {
+        e.preventDefault();
+        elDropZone.classList.remove('dragover');
+      });
+      elDropZone.addEventListener('drop', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        elDropZone.classList.remove('dragover');
+        var file = null;
+        var dt = e.dataTransfer;
+        if (dt) {
+          if (dt.files && dt.files.length) {
+            file = dt.files[0];
+          } else if (dt.items && dt.items.length) {
+            for (var i = 0; i < dt.items.length; i++) {
+              if (dt.items[i].kind === 'file' && typeof dt.items[i].getAsFile === 'function') {
+                file = dt.items[i].getAsFile();
+                if (file) break;
+              }
+            }
+          }
+        }
+        if (file) {
+          setMode('upload');
+          handleFile(file);
+        } else {
+          toast('没拿到图片，试试用「选择图片」按钮');
+        }
+      });
+    }
+    // 防止把文件丢在页面别处时浏览器直接打开它
+    document.addEventListener('dragover', function (e) {
+      e.preventDefault();
+    });
+    document.addEventListener('drop', function (e) {
+      e.preventDefault();
+    });
+
+    /* ---------- Ctrl+V 粘贴截图 ---------- */
+    document.addEventListener('paste', function (e) {
+      var dt = e.clipboardData;
+      if (!dt) return;
+      var file = null;
+      if (dt.items && dt.items.length) {
+        for (var i = 0; i < dt.items.length; i++) {
+          var item = dt.items[i];
+          if (item.kind === 'file' && item.type && item.type.indexOf('image/') === 0) {
+            if (typeof item.getAsFile === 'function') {
+              file = item.getAsFile();
+            }
+            if (file) break;
+          }
+        }
+      }
+      if (!file && dt.files && dt.files.length) {
+        for (var j = 0; j < dt.files.length; j++) {
+          if (dt.files[j].type && dt.files[j].type.indexOf('image/') === 0) {
+            file = dt.files[j];
+            break;
+          }
+        }
+      }
+      if (!file) return;
+      e.preventDefault();
+      setMode('upload');
+      handleFile(file);
+      toast('收到粘贴的图片，正在识别…');
+    });
+
+    /* ---------- 摄像头 ---------- */
+    if (elBtnCamera) {
+      elBtnCamera.addEventListener('click', function () {
+        startCamera();
+      });
+    }
+    if (elBtnStop) {
+      elBtnStop.addEventListener('click', function () {
+        stopCamera();
+        setCameraStatus('摄像头已关闭');
+      });
+    }
+    if (elBtnResume) {
+      elBtnResume.addEventListener('click', function () {
+        camPaused = false;
+        if (elBtnResume) elBtnResume.hidden = true;
+        setCameraStatus('继续扫，对着下一个二维码就行');
+        if (camStream) startScanLoop();
+      });
+    }
+
+    /* ---------- 引擎失败后重试 ---------- */
+    if (elBtnRetryEngine) {
+      elBtnRetryEngine.addEventListener('click', function () {
+        engine.mode = 'none';
+        engine.waiters.length = 0;
+        if (elEngineBox) elEngineBox.hidden = true;
+        setUploadStatus('正在重新加载识别引擎…');
+        ensureEngine(function (ok) {
+          if (!ok) {
+            showEngineFail();
+            setUploadStatus('');
+            return;
+          }
+          setUploadStatus('识别引擎已就绪，重新选一张图片试试');
+          toast('识别引擎已就绪 ✅');
+        });
+      });
+    }
+
+    /* ---------- 清空结果 ---------- */
+    if (elBtnClearResults) {
+      elBtnClearResults.addEventListener('click', function () {
+        results.length = 0;
+        renderResults();
+      });
+    }
+
+    /* ---------- 离开页面 / 切到后台时释放摄像头 ---------- */
+    window.addEventListener('beforeunload', function () {
+      stopCamera();
+    });
+    window.addEventListener('pagehide', function () {
+      stopCamera();
+    });
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden && camStream) {
+        stopCamera();
+        setCameraStatus('已切到后台，摄像头已关闭；回到本页后点「📷 打开摄像头」继续');
+      }
+    });
+
+    setMode('upload');
+    renderResults();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+
+</body>
+</html>
